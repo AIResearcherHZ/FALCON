@@ -1,0 +1,17 @@
+# @package _global_
+
+rewards:
+  set_reward: motion_imitation
+  set_reward_date: 20260528
+  only_positive_rewards: False
+  num_compute_average_epl: 10000
+  reward_scales:
+    tracking_dof_pos: 1.0
+    action_rate: -0.01
+    torque: -1.e-5
+  reward_penalty_curriculum: False
+  reward_penalty_degree: 0.0
+  reward_penalty_level_down_threshold: 0.0
+  reward_penalty_level_up_threshold: 0.0
+  reward_penalty_level: 0
+  reward_penalty_max_value: 1.0

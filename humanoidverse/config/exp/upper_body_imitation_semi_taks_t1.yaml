@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - /algo: ppo_upper_body_imitation
+  - /env: upper_body_imitation
+  - /robot: Semi_Taks_T1/Semi_Taks_T1_20dof
+  - /obs: upper_body_imitation_obs
+  - /rewards: upper_body_imitation_rewards
+  - /terrain: terrain_locomotion_plane
+  - /domain_rand: domain_rand_rl_gym
+  - /simulator: isaacgym
+
+experiment_name: SemiTaksT1_UpperBodyImitation
+log_task_name: upper_body_imitation
+
+num_envs: 1024
+headless: True
+
+eval_overrides:
+  headless: False
+  num_envs: 1

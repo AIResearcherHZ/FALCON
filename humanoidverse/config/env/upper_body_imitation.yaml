@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+  - legged_base
+
+env:
+  _target_: humanoidverse.envs.upper_body_imitation.upper_body_imitation.UpperBodyImitation
+  _recursive_: False
+  config:
+    max_episode_length_s: 10
+    termination:
+      terminate_when_close_to_dof_pos_limit: False
+      terminate_when_close_to_dof_vel_limit: False
+      terminate_when_close_to_torque_limit: False
+    termination_scales:
+      termination_close_to_dof_pos_limit: 0.98
+      termination_close_to_dof_vel_limit: 0.98
+      termination_close_to_torque_limit: 0.98
+
+log_task_name: upper_body_imitation
