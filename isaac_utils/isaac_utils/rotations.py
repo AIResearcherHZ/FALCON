@@ -410,7 +410,7 @@ def quat_mul(a, b, w_last: bool):
 @torch.jit.script
 def quat_mul_norm(x, y, w_last):
     # type: (Tensor, Tensor, bool) -> Tensor
-    """
+    r"""
     Combine two set of 3D rotations together using \**\* operator. The shape needs to be
     broadcastable
     """
@@ -419,7 +419,7 @@ def quat_mul_norm(x, y, w_last):
 @torch.jit.script
 def quat_mul_norm(x, y, w_last):
     # type: (Tensor, Tensor, bool) -> Tensor
-    """
+    r"""
     Combine two set of 3D rotations together using \**\* operator. The shape needs to be
     broadcastable
     """

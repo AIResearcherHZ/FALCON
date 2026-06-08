@@ -44,7 +44,6 @@ __pycache__
 !humanoidverse/data/motions/g1_29dof/v1/accad_all.pkl
 !humanoidverse/data/motions/t1_29dof/v1/accad_all.pkl
 
-*.TXT
 
 humanoidverse/data/smpl
 data/shape
@@ -53,8 +52,6 @@ humanoidverse/data/Recorded/
 humanoidverse/data/AMASS/
 AMASS/*
 
-*.sh
-*.txt
 *.zip
 
 *.jpg

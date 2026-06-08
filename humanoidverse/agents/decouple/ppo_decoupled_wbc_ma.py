@@ -8,6 +8,7 @@ from humanoidverse.envs.base_task.base_task import BaseTask
 from humanoidverse.agents.callbacks.base_callback import RL_EvalCallback
 from humanoidverse.utils.average_meters import TensorAverageMeterDict
 from humanoidverse.agents.ppo.ppo import PPO
+from humanoidverse.utils import distributed as dist_utils
 
 from torch.utils.tensorboard import SummaryWriter as TensorboardSummaryWriter
 import time
@@ -30,7 +31,8 @@ class PPOMultiActorCritic(PPO):
         self.env = env
         self.config = config
         self.log_dir = log_dir
-        self.writer = TensorboardSummaryWriter(log_dir=self.log_dir, flush_secs=10)
+        # 只有 rank0 写 TensorBoard(多卡时各副本权重一致,无需重复落盘)
+        self.writer = TensorboardSummaryWriter(log_dir=self.log_dir, flush_secs=10) if dist_utils.is_main() else None
 
         self.start_time = 0
         self.stop_time = 0
@@ -100,10 +102,15 @@ class PPOMultiActorCritic(PPO):
                 weight_decay=self.config.get('weight_decay', 0.01),  # L2 regularization
             )
             self.critic_optimizers[key] = optim.AdamW(
-                self.critics[key].parameters(), 
+                self.critics[key].parameters(),
                 lr=self.critic_learning_rates[key],
                 weight_decay=self.config.get('weight_decay', 0.01),  # L2 regularization
             )
+
+        # 多卡:把 rank0 的每个 key 的初始权重广播给所有 rank,保证各副本起点一致(单进程 no-op)
+        for key in self.keys:
+            dist_utils.broadcast_module(self.actors[key])
+            dist_utils.broadcast_module(self.critics[key])
 
     def _setup_storage(self):
         self.storage = RolloutStorage(self.env.num_envs, self.num_steps_per_env, device=self.device)
@@ -162,6 +169,8 @@ class PPOMultiActorCritic(PPO):
         self.critic_learning_rates = critic_learning_rates
 
     def save(self, path, infos=None):
+        if not dist_utils.is_main():   # 仅 rank0 保存(防御性:learn() 已门控)
+            return
         logger.info(f"Saving checkpoint to {path}")
         torch.save({
             "actor_model_state_dict": {key: self.actors[key].state_dict() for key in self.keys},
@@ -365,7 +374,8 @@ class PPOMultiActorCritic(PPO):
                     torch.log(sigma_batch / old_sigma_batch + 1.e-5) + 
                     (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch)) / (2.0 * torch.square(sigma_batch) + 1.e-5) - 0.5, axis=-1)
                 kl_mean = torch.mean(kl)
-                
+                kl_mean = dist_utils.all_reduce_mean(kl_mean)  # 跨卡同步 KL → 该 key 在各 rank 学习率一致(单进程 no-op)
+
                 if kl_mean > self.desired_kl * 2.0:
                     self.actor_learning_rates[key] = max(1e-5, self.actor_learning_rates[key] / 1.5)
                     self.critic_learning_rates[key] = max(1e-5, self.critic_learning_rates[key] / 1.5)
@@ -410,6 +420,10 @@ class PPOMultiActorCritic(PPO):
         
         actor_loss.backward()
         critic_loss.backward()
+
+        # 多卡:clip/step 之前对该 key 的梯度做跨卡平均(单进程 no-op)→ 等价于 world_size×batch 的一步
+        dist_utils.average_gradients(self.actors[key])
+        dist_utils.average_gradients(self.critics[key])
 
         # Gradient step
         nn.utils.clip_grad_norm_(self.actors[key].parameters(), self.max_grad_norm)

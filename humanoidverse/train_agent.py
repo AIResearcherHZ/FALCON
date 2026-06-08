@@ -45,6 +45,7 @@ def main(config: OmegaConf):
     from humanoidverse.agents.base_algo.base_algo import BaseAlgo  # noqa: E402
     from humanoidverse.utils.helpers import pre_process_config
     from humanoidverse.utils.logging import HydraLoggerBridge
+    from humanoidverse.utils.distributed import setup_distributed, is_main, get_rank, get_world_size, barrier, cleanup_distributed
 
     # logging to hydra log file
     hydra_log_path = os.path.join(HydraConfig.get().runtime.output_dir, "train.log")
@@ -61,7 +62,21 @@ def main(config: OmegaConf):
     unresolved_conf = OmegaConf.to_container(config, resolve=False)
     os.chdir(hydra.utils.get_original_cwd())
 
-    if config.use_wandb:
+    # ---- 单机多卡:从 torchrun 环境初始化分布式(未经 torchrun 启动时为单进程 no-op,行为与原来一致)----
+    local_rank, world_size = setup_distributed()
+    if world_size > 1:
+        device = f"cuda:{local_rank}"            # 每进程绑定 cuda:local_rank(IsaacGym 一进程一卡)
+    elif hasattr(config, 'device') and config.device is not None:
+        device = config.device
+    else:
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    if config.seed is not None:
+        config.seed = config.seed + get_rank()   # 各 rank 不同 seed → 采样更多样;网络初始权重随后由 rank0 广播统一
+    if world_size > 1:
+        logger.info(f"[DDP] rank {get_rank()}/{world_size} on {device}, seed={config.seed}, "
+                    f"per-rank num_envs={config.num_envs} (total across ranks={config.num_envs * world_size})")
+
+    if config.use_wandb and is_main():
         project_name = f"{config.project_name}"
         run_name = f"{config.timestamp}_{config.experiment_name}_{config.log_task_name}_{config.robot.asset.robot_type}"
         wandb_dir = Path(config.wandb.wandb_dir)
@@ -73,15 +88,7 @@ def main(config: OmegaConf):
                 sync_tensorboard=True,
                 config=unresolved_conf,
                 dir=wandb_dir)
-    
-    if hasattr(config, 'device'):
-        if config.device is not None:
-            device = config.device
-        else:
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    else:
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    
+
     pre_process_config(config)
 
     # torch.set_float32_matmul_precision("medium")
@@ -96,11 +103,11 @@ def main(config: OmegaConf):
 
 
     experiment_save_dir = Path(config.experiment_dir)
-    experiment_save_dir.mkdir(exist_ok=True, parents=True)
-
-    logger.info(f"Saving config file to {experiment_save_dir}")
-    with open(experiment_save_dir / "config.yaml", "w") as file:
-        OmegaConf.save(unresolved_conf, file)
+    if is_main():   # 只有 rank0 落盘日志/配置/ckpt,避免多进程写同一目录(各副本权重一致)
+        experiment_save_dir.mkdir(exist_ok=True, parents=True)
+        logger.info(f"Saving config file to {experiment_save_dir}")
+        with open(experiment_save_dir / "config.yaml", "w") as file:
+            OmegaConf.save(unresolved_conf, file)
 
     algo: BaseAlgo = instantiate(device=device, env=env, config=config.algo, log_dir=experiment_save_dir)
     algo.setup()
@@ -110,6 +117,9 @@ def main(config: OmegaConf):
 
     # handle saving config
     algo.learn()
+
+    barrier()               # 等所有 rank 训练结束(rank0 可能还在写最终 ckpt)再统一退出
+    cleanup_distributed()   # 销毁进程组(单进程时 no-op)
 
     if simulator_type == 'IsaacSim':
         simulation_app.close()
