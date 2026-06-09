@@ -120,19 +120,32 @@
 (3) 续训: 末尾加 +checkpoint=logs/g1_29dof_falcon/<run>/model_<iter>.pt
 (4) TensorBoard: tensorboard --logdir logs --host 0.0.0.0 --port 6006
 
-──── 步骤2  评估 (自动开 viewer,1 env;会自动读 ckpt 同目录的训练配置,无需重复传参)
-(1) 复制即跑(自动选最新 checkpoint):
+──── 步骤2  评估
     python humanoidverse/eval_agent.py \
-      +checkpoint=$(ls -t logs/g1_29dof_falcon/*/model_*.pt | head -1)
-    # 想看指定某个: 把上面一行换成  +checkpoint=logs/g1_29dof_falcon/<run>/model_<iter>.pt
+      +checkpoint=logs/g1_29dof_falcon/20260608_221455-g1_29dof_falcon-decoupled_locomotion-g1_29dof_fakehand/model_10000.pt
 
-──── 步骤3  Sim2Sim (MuJoCo,在 sim2real/ 下,conda fcreal,开两个终端)
-(1) 终端1: cd sim2real && python sim_env/loco_manip.py \
+──── 步骤3  Sim2Sim (MuJoCo,conda gmr,开两个终端;脚本已自定位,在 FALCON/ 根目录直接跑)
+(1) 终端1(先开仿真,弹出 MuJoCo 窗口,机器人被吊带吊着):
+    python sim2real/sim_env/loco_manip.py \
       --config=config/g1/g1_29dof_falcon.yaml
-(2) 终端2: cd sim2real && python rl_policy/loco_manip/loco_manip.py \
+(2) 终端2(再开策略):
+    python sim2real/rl_policy/loco_manip/loco_manip.py \
       --config=config/g1/g1_29dof_falcon.yaml \
       --model_path=models/falcon/g1_29dof.onnx
-    # 键盘: ] 启动  o 急停  = 站/走切换  wsad 速度  qe 偏航  z 零速  12 base高
+
+    # ── 键盘控制速查 (loco_manip;两套键盘,别按错窗口!) ──
+    # ★顺序: 终端2按 i 归位 → MuJoCo窗按 8 落地、9 松吊带 → 终端2按 ] 启动 → = 进行走 → wasd走/qe转
+    # 【终端2 策略窗 / sshkeyboard 监听】
+    #   i 归位初始姿态     ] 启动策略     o 急停清零
+    #   = 站立↔行走切换     z 所有速度清零     m 快速后退(vx=-1)
+    #   w/s 前进/后退±0.1   a/d 左移/右移±0.1   q/e 左转/右转±0.1   (wasd·qe 仅行走模式生效)
+    #   ,/. 腰部偏航∓0.2(扭身)     1/2 基座目标高度 升/降±0.1
+    #   7/4 KP±0.1     6/5 KP±0.01     0 KP重置=1.0
+    # 【MuJoCo 窗口 / 鼠标点一下窗口聚焦 / glfw 监听】
+    #   9 开关弹性吊带   7/8 吊带升/降   0 双手施加外力(每按-10,范围±70)→测力自适应   空格 力估计开关   Backspace 复位
+    #   鼠标: 左键转视角 · 右键平移 · 滚轮缩放
+    # 注: 手臂末端(双手 xyz / 手腕)键盘控不了,只能手柄(config 里 USE_JOYSTICK=1);
+    #     键盘模式下双臂保持默认目标位姿,由策略配合下肢走动——这就是 loco-manip 的核心演示。
 
 ──── 步骤4  真机 (Unitree G1)
 # 同步骤3,但只跑终端2 的策略(不开 sim_env),并把 config 里 INTERFACE 改成真机网口。

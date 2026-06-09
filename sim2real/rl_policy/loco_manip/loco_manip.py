@@ -6,8 +6,12 @@ import numpy as np
 import argparse
 import yaml
 
-sys.path.append("../")
-sys.path.append("./rl_policy")
+# --- Robust path setup: runnable from ANY working directory ---
+_sim2real_dir = os.path.dirname(os.path.abspath(__file__))
+while os.path.basename(_sim2real_dir) != "sim2real" and _sim2real_dir != os.path.dirname(_sim2real_dir):
+    _sim2real_dir = os.path.dirname(_sim2real_dir)
+sys.path.append(os.path.dirname(_sim2real_dir))  # FALCON repo root -> enables `import sim2real`
+os.chdir(_sim2real_dir)  # config/, models/ and ../humanoidverse/ paths are resolved relative to sim2real/
 
 import pinocchio as pin
 from sim2real.rl_policy.dec_loco.dec_loco import DecLocomotionPolicy

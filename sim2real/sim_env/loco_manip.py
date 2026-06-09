@@ -6,8 +6,13 @@ import numpy as np
 import yaml
 import argparse
 
-sys.path.append("../")
-sys.path.append("./sim2real")
+# --- Robust path setup: runnable from ANY working directory ---
+import os
+_sim2real_dir = os.path.dirname(os.path.abspath(__file__))
+while os.path.basename(_sim2real_dir) != "sim2real" and _sim2real_dir != os.path.dirname(_sim2real_dir):
+    _sim2real_dir = os.path.dirname(_sim2real_dir)
+sys.path.append(os.path.dirname(_sim2real_dir))  # FALCON repo root -> enables `import sim2real`
+os.chdir(_sim2real_dir)  # config/ and ../humanoidverse/ paths are resolved relative to sim2real/
 
 
 from sim2real.sim_env.base_sim import BaseSimulator
