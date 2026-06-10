@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # tmux 后台跑训练,断 SSH 不挂;自动激活 conda、tee 日志。
 # 用法: ./run_train.sh <会话名> <完整训练命令...>   (命令见 注释.txt 步骤1)
-#   单卡: 首个参数加 CUDA_VISIBLE_DEVICES=0 指定卡(默认 NPROC=1,行为与原来一致)。
+#   指定卡(单卡/多卡通用): 在最前面设 CUDA_VISIBLE_DEVICES=... (会自动带进 tmux 会话)。
+#     例(单卡用 2 号卡):     CUDA_VISIBLE_DEVICES=2 ./run_train.sh g1 python humanoidverse/train_agent.py +exp=... ...
+#     例(多卡用 0,1,2,3 号卡): CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC=4 ./run_train.sh g1m python humanoidverse/train_agent.py +exp=... ...
+#   单卡: 默认 NPROC=1(不设 CUDA_VISIBLE_DEVICES 则用 0 号卡)。
 #   多卡(单机多卡,同步数据并行 DDP): 设 NPROC=张数,训练命令须以 python 开头(会替换成 torchrun)。
 #     例: NPROC=4 ./run_train.sh g1 python humanoidverse/train_agent.py +exp=... ...
 #     说明: 每张卡跑一个进程、各自 num_envs 个环境(总环境数 = NPROC × num_envs);梯度跨卡平均;
-#           多卡模式下不要再加 CUDA_VISIBLE_DEVICES 前缀(要让 N 张卡都可见)。
+#           多卡时 NPROC 不能超过 CUDA_VISIBLE_DEVICES 指定的卡数(不设则为机器全部卡)。
 #   CONDA_ENV=xxx 换环境,CONDA_ENV= 跳过激活。
 #   看输出: tmux attach -t <会话名> (脱离 Ctrl-b 再 d) | 停止: tmux kill-session -t <会话名>
 set -euo pipefail
@@ -55,12 +58,19 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 1
 fi
 
+# 捕获外层 CUDA_VISIBLE_DEVICES 注入 tmux(否则在新会话里丢失;单卡/多卡均生效)。
+CVD_CMD=""
+if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+  CVD_CMD="export CUDA_VISIBLE_DEVICES=$(printf '%q' "$CUDA_VISIBLE_DEVICES") && "
+fi
+
 # printf %q 安全拼接(保留 CUDA_VISIBLE_DEVICES=0 前缀);激活+cd 成功后才训练,退出后 read 保留窗口。
-INNER="${CONDA_PREFIX_CMD}cd $(printf '%q' "$REPO_DIR") && PYTHONUNBUFFERED=1 $(printf '%q ' "$@")2>&1 | tee $(printf '%q' "$LOG"); echo; echo '==== 训练进程已退出,按回车关闭本窗口 ===='; read"
+INNER="${CONDA_PREFIX_CMD}${CVD_CMD}cd $(printf '%q' "$REPO_DIR") && PYTHONUNBUFFERED=1 $(printf '%q ' "$@")2>&1 | tee $(printf '%q' "$LOG"); echo; echo '==== 训练进程已退出,按回车关闭本窗口 ===='; read"
 tmux new-session -d -s "$SESSION" "bash -lc $(printf '%q' "$INNER")"
 
 echo "✅ 已在 tmux 会话 '$SESSION' 启动训练(断 SSH 不中断)。"
 [ "$NPROC" -gt 1 ] && echo "   多卡: torchrun $NPROC 进程(每卡一个,同步数据并行 DDP)" || echo "   单卡模式(NPROC=1)"
 [ -n "$CONDA_PREFIX_CMD" ] && echo "   conda 环境: $CONDA_ENV"
+[ -n "${CUDA_VISIBLE_DEVICES:-}" ] && echo "   指定卡: CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 echo "   实时查看: tmux attach -t $SESSION   跟踪日志: tail -f $REPO_DIR/$LOG"
 echo "   全部会话: tmux ls                 停止训练: tmux kill-session -t $SESSION"
