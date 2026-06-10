@@ -87,18 +87,21 @@ def broadcast_module(module, src=0):
 
 @torch.no_grad()
 def average_gradients(module):
-    """对 module 的梯度做跨卡 all-reduce 取平均。
+    """backward 后、step 前调用:单次融合 all-reduce 取平均,各副本迈出相同一步。
 
-    须在 backward() 之后、clip_grad_norm_/optimizer.step() 之前调用,使每个副本
-    迈出完全相同的一步(等价于 world_size * local_batch 的单次更新)。
+    遍历全部参数(grad 缺失用零占位),保证各 rank 的 all-reduce 张量一致,
+    避免逐参数条件式 collective 数量不匹配导致的静默错乱/挂起。
     """
     if not is_dist():
         return
-    inv = 1.0 / get_world_size()
-    for p in module.parameters():
+    params = list(module.parameters())
+    grads = [p.grad if p.grad is not None else torch.zeros_like(p) for p in params]
+    flat = torch._utils._flatten_dense_tensors(grads)
+    dist.all_reduce(flat, op=dist.ReduceOp.SUM)
+    flat.mul_(1.0 / get_world_size())
+    for p, g in zip(params, torch._utils._unflatten_dense_tensors(flat, grads)):
         if p.grad is not None:
-            dist.all_reduce(p.grad.data, op=dist.ReduceOp.SUM)
-            p.grad.data.mul_(inv)
+            p.grad.copy_(g)
 
 
 def all_reduce_mean(tensor):

@@ -37,6 +37,7 @@ class PPOActor(nn.Module):
         self.std = nn.Parameter(std_tensor)
         self.min_noise_std = module_config_dict.get('min_noise_std', None)
         self.min_mean_noise_std = module_config_dict.get('min_mean_noise_std', None)
+        self.max_noise_std = module_config_dict.get('max_noise_std', None)  # 可选 std 上限,默认关(不影响现有训练);weak 扩展可设如 1.0 防膨胀
         # self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
         self.distribution = None
         # disable args validation for speedup
@@ -78,18 +79,16 @@ class PPOActor(nn.Module):
 
     def update_distribution(self, actor_obs):
         mean = self.actor(actor_obs)
+        std = self.std
         if self.min_noise_std:
-            clamped_std = torch.clamp(self.std, min=self.min_noise_std)
-            self.distribution = Normal(mean, mean * 0. + clamped_std)
+            std = torch.clamp(std, min=self.min_noise_std)
         elif self.min_mean_noise_std:
-            current_mean = self.std.mean()
+            current_mean = std.mean()
             if current_mean < self.min_mean_noise_std:
-                scale_up = self.min_mean_noise_std / (current_mean + 1e-6)
-                clamped_std = self.std * scale_up
-            else:
-                clamped_std = self.std
-            self.distribution = Normal(mean, mean * 0. + clamped_std)
-        else: self.distribution = Normal(mean, mean * 0. + self.std)
+                std = std * (self.min_mean_noise_std / (current_mean + 1e-6))
+        if self.max_noise_std is not None:
+            std = torch.clamp(std, max=self.max_noise_std)
+        self.distribution = Normal(mean, mean * 0. + std)
 
     def act(self, actor_obs, **kwargs):
         self.update_distribution(actor_obs)

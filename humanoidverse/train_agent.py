@@ -62,19 +62,25 @@ def main(config: OmegaConf):
     unresolved_conf = OmegaConf.to_container(config, resolve=False)
     os.chdir(hydra.utils.get_original_cwd())
 
-    # ---- 单机多卡:从 torchrun 环境初始化分布式(未经 torchrun 启动时为单进程 no-op,行为与原来一致)----
+    # 单机多卡:torchrun 启动则初始化分布式;单进程为 no-op
     local_rank, world_size = setup_distributed()
     if world_size > 1:
-        device = f"cuda:{local_rank}"            # 每进程绑定 cuda:local_rank(IsaacGym 一进程一卡)
+        device = f"cuda:{local_rank}"
+        # strong: 总环境数恒定,各 rank 均分 → 多卡优化等价单卡;weak: 各卡跑满 num_envs
+        if config.get('scaling_mode', 'strong') == 'strong':
+            assert config.num_envs % world_size == 0, \
+                f"strong scaling 需 num_envs({config.num_envs}) 能被卡数({world_size})整除"
+            config.num_envs = config.num_envs // world_size
     elif hasattr(config, 'device') and config.device is not None:
         device = config.device
     else:
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
     if config.seed is not None:
-        config.seed = config.seed + get_rank()   # 各 rank 不同 seed → 采样更多样;网络初始权重随后由 rank0 广播统一
+        config.seed = config.seed + get_rank()
     if world_size > 1:
         logger.info(f"[DDP] rank {get_rank()}/{world_size} on {device}, seed={config.seed}, "
-                    f"per-rank num_envs={config.num_envs} (total across ranks={config.num_envs * world_size})")
+                    f"per-rank num_envs={config.num_envs} (total={config.num_envs * world_size}), "
+                    f"scaling={config.get('scaling_mode', 'strong')}")
 
     if config.use_wandb and is_main():
         project_name = f"{config.project_name}"

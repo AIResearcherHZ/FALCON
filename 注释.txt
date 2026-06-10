@@ -48,6 +48,7 @@
 
 (1b) 多卡训练(复制即跑;4 卡。改张数就改 NPROC=,会话名 g1m 可自取。首次上服务器先按上方「训练加速」节 A 验证两步)
     # 指定卡: 最前面加 CUDA_VISIBLE_DEVICES=0,1,2,3 (卡数须≥NPROC);不加默认用全部卡
+    # ★strong 扩展(默认): 下面 num_envs 是「总环境数」,各卡自动均分(如4卡→各2048),优化等价单卡;num_envs 须能被卡数整除
     NPROC=4 ./run_train.sh g1m python humanoidverse/train_agent.py \
       +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \
       +simulator=isaacgym \
@@ -148,6 +149,7 @@
 
 (1b) 多卡训练(复制即跑;4 卡。改张数就改 NPROC=,会话名 t1m 可自取。首次上服务器先按上方「训练加速」节 A 验证两步)
     # 指定卡: 最前面加 CUDA_VISIBLE_DEVICES=0,1,2,3 (卡数须≥NPROC);不加默认用全部卡
+    # ★strong 扩展(默认): 下面 num_envs 是「总环境数」,各卡自动均分(如4卡→各2048),优化等价单卡;num_envs 须能被卡数整除
     NPROC=4 ./run_train.sh t1m python humanoidverse/train_agent.py \
       +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \
       +simulator=isaacgym \

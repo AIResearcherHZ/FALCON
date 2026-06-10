@@ -7,8 +7,8 @@
 #   单卡: 默认 NPROC=1(不设 CUDA_VISIBLE_DEVICES 则用 0 号卡)。
 #   多卡(单机多卡,同步数据并行 DDP): 设 NPROC=张数,训练命令须以 python 开头(会替换成 torchrun)。
 #     例: NPROC=4 ./run_train.sh g1 python humanoidverse/train_agent.py +exp=... ...
-#     说明: 每张卡跑一个进程、各自 num_envs 个环境(总环境数 = NPROC × num_envs);梯度跨卡平均;
-#           多卡时 NPROC 不能超过 CUDA_VISIBLE_DEVICES 指定的卡数(不设则为机器全部卡)。
+#     说明: 每卡一个进程,梯度跨卡平均。strong 扩展(默认)总环境数 = num_envs(各卡均分 num_envs/NPROC),等价单卡配方;
+#           num_envs 须能被 NPROC 整除;NPROC 不超过 CUDA_VISIBLE_DEVICES 卡数(不设则用全部卡);weak 扩展加 scaling_mode=weak(总数×卡数,需重新调参)。
 #   CONDA_ENV=xxx 换环境,CONDA_ENV= 跳过激活。
 #   看输出: tmux attach -t <会话名> (脱离 Ctrl-b 再 d) | 停止: tmux kill-session -t <会话名>
 set -euo pipefail
@@ -69,7 +69,7 @@ INNER="${CONDA_PREFIX_CMD}${CVD_CMD}cd $(printf '%q' "$REPO_DIR") && PYTHONUNBUF
 tmux new-session -d -s "$SESSION" "bash -lc $(printf '%q' "$INNER")"
 
 echo "✅ 已在 tmux 会话 '$SESSION' 启动训练(断 SSH 不中断)。"
-[ "$NPROC" -gt 1 ] && echo "   多卡: torchrun $NPROC 进程(每卡一个,同步数据并行 DDP)" || echo "   单卡模式(NPROC=1)"
+[ "$NPROC" -gt 1 ] && echo "   多卡: torchrun $NPROC 进程(strong 扩展: 总环境数恒定 num_envs,各卡均分)" || echo "   单卡模式(NPROC=1)"
 [ -n "$CONDA_PREFIX_CMD" ] && echo "   conda 环境: $CONDA_ENV"
 [ -n "${CUDA_VISIBLE_DEVICES:-}" ] && echo "   指定卡: CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 echo "   实时查看: tmux attach -t $SESSION   跟踪日志: tail -f $REPO_DIR/$LOG"
