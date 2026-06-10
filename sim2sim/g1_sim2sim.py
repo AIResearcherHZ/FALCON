@@ -32,7 +32,7 @@ def quat_rotate_inverse(q, v):
 def main():
     ap = argparse.ArgumentParser(description="G1 sim2sim, self-contained single file")
     ap.add_argument("--config", default=os.path.join(_S2R, "config/g1/g1_29dof_falcon.yaml"))
-    ap.add_argument("--model_path", default=None)
+    ap.add_argument("--model_path", default="models/falcon/g1.onnx")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
@@ -110,10 +110,13 @@ def main():
 
     def policy_step():
         frame = build_frame()
+        # Defensive: never feed NaN/Inf into the policy (e.g. right after a contact blow-up).
+        frame = np.nan_to_num(frame, nan=0.0, posinf=0.0, neginf=0.0)
         if st['obs'] is None:
             st['obs'] = np.zeros((1, frame.shape[1] * HIST), dtype=np.float32)
         st['obs'] = np.concatenate([st['obs'][:, frame.shape[1]:], frame], axis=1)
-        action = np.clip(sess.run([out_name], {in_name: st['obs']})[0], -100.0, 100.0)
+        raw = np.nan_to_num(sess.run([out_name], {in_name: st['obs']})[0], nan=0.0, posinf=0.0, neginf=0.0)
+        action = np.clip(raw, -100.0, 100.0)
         st['act'] = action.astype(np.float32)
         return np.clip(action[0] * action_scale + offset, qlo, qhi)
 
@@ -184,9 +187,16 @@ def main():
 
     decim = max(1, round((1.0 / float(cfg.get("rl_rate", 50))) / sim_dt))
     sync_every = max(1, round(viewer_dt / sim_dt))
+    fall_tilt = float(cfg.get("FALL_TILT", 0.5))
+    fall_persist = max(1, round(float(cfg.get("FALL_PERSIST", 0.3)) / sim_dt))
+
+    def upright_score():
+        quat = d.qpos[3:7].reshape(1, 4)
+        return float(-quat_rotate_inverse(quat, np.array([[0.0, 0.0, -1.0]]))[0, 2])
 
     place_stand()
     q_target = offset.copy()
+    fall_cnt = 0
 
     print("[g1_sim2sim] 原生策略。pynput 全局键盘:焦点在 MuJoCo 窗口 或 终端 都能控制。\n"
           "  方向键: ↑/↓ 前进/后退, ←/→ 左转/右转\n"
@@ -206,11 +216,37 @@ def main():
                     q_target = offset.copy()
                     st['reset'] = False
                     step = 0
+                    fall_cnt = 0
+                    t_next = time.perf_counter()
                 if step % decim == 0:
                     q_target = policy_step()
                 tau = kp * (q_target - d.qpos[7:7 + ND]) + kd * (0.0 - d.qvel[6:6 + ND])
                 d.ctrl[6:6 + ND] = np.clip(tau, -eff, eff)
                 mujoco.mj_step(m, d)
+
+                # Stability guard: NaN/Inf resets immediately; a tilt past ~60° must
+                # persist for `fall_persist` steps before it counts as a fall.
+                finite = np.isfinite(d.qpos).all() and np.isfinite(d.qvel).all() and np.isfinite(d.qacc).all()
+                if not finite:
+                    bad = "状态出现 NaN/Inf (non-finite state)"
+                elif upright_score() < fall_tilt:
+                    fall_cnt += 1
+                    bad = (f"机器人持续倾倒 tipped over (upright={upright_score():.2f}<{fall_tilt:.2f}, "
+                           f"{fall_cnt * sim_dt:.1f}s)") if fall_cnt >= fall_persist else None
+                else:
+                    fall_cnt = 0
+                    bad = None
+                if bad is not None:
+                    print(f"[稳定性保护] {bad} @ t={d.time:.2f}s → 自动复位站立 (auto-reset). "
+                          f"该策略不够鲁棒,可改用 models/falcon/g1_29dof.onnx 或加大训练域随机化。", flush=True)
+                    place_stand()
+                    q_target = offset.copy()
+                    viewer.sync()
+                    step = 0
+                    fall_cnt = 0
+                    t_next = time.perf_counter()
+                    continue
+
                 if step % sync_every == 0:
                     viewer.sync()
                 step += 1
