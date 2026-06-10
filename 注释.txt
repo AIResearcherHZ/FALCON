@@ -191,12 +191,117 @@
 
 
 ################################################################################
+#                  本体 3: Taks_T1 (32DoF 全身, 浮动基座)
+#   = g1 的 29DoF + 3DoF 脖子; 关节顺序 腿12→腰3→臂14→脖3; 与 g1 同走解耦运动(decoupled locomotion)流程。
+#   下半身 lower=15(腿12+腰3), 上半身 upper=17(臂14+脖3); g1 动作里没有脖子, 脖子3关节跟踪零参考(保持平视)。
+#   robot 配置 config/robot/Taks_T1/Taks_T1_32dof.yaml ; obs 配置 config/obs/dec_loco/Taks_T1_32dof_obs_diff_force_history_wolinvel_ma.yaml
+################################################################################
+──── 步骤0  生成动作 .pkl (首次必跑; 见下方「数据转换」(2), 纯 numpy/joblib, conda gmr 即可)
+    python humanoidverse/utils/retarget_g1_to_taks_t1.py
+    # 产出 humanoidverse/data/motions/Taks_T1/v1/accad_all.pkl (252 个动作, 脖子3关节零填充)
+
+──── 步骤1  训练            # 同 G1, 仅换 robot/obs; 复制即跑
+(1) 单卡训练:
+    CUDA_VISIBLE_DEVICES=0 ./run_train.sh takst1 python humanoidverse/train_agent.py \
+      +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \
+      +simulator=isaacgym \
+      +domain_rand=domain_rand_rl_gym \
+      +rewards=dec_loco/reward_dec_loco_stand_height_ma_diff_force \
+      +robot=Taks_T1/Taks_T1_32dof \
+      +terrain=terrain_locomotion_plane \
+      +obs=dec_loco/Taks_T1_32dof_obs_diff_force_history_wolinvel_ma \
+      num_envs=8192 \
+      project_name=Taks_T1_falcon \
+      experiment_name=Taks_T1_falcon \
+      obs.add_noise=True \
+      env.config.fix_upper_body_prob=0.3 \
+      robot.dof_effort_limit_scale=0.9 \
+      rewards.reward_initial_penalty_scale=0.1 \
+      rewards.reward_penalty_degree=0.0001
+    # 站立高度 desired_base_height 奖励默认 0.75, 正好是 Taks_T1 站姿高度, 无需覆盖(这点和 t1 不同, t1 要降到 0.62)。
+
+(1b) 多卡训练(复制即跑;4 卡。改张数改 NPROC=,会话名 takst1m 可自取):
+    CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC=4 ./run_train.sh takst1m python humanoidverse/train_agent.py \
+      +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \
+      +simulator=isaacgym \
+      +domain_rand=domain_rand_rl_gym \
+      +rewards=dec_loco/reward_dec_loco_stand_height_ma_diff_force \
+      +robot=Taks_T1/Taks_T1_32dof \
+      +terrain=terrain_locomotion_plane \
+      +obs=dec_loco/Taks_T1_32dof_obs_diff_force_history_wolinvel_ma \
+      num_envs=8192 \
+      project_name=Taks_T1_falcon \
+      experiment_name=Taks_T1_falcon \
+      obs.add_noise=True \
+      env.config.fix_upper_body_prob=0.3 \
+      robot.dof_effort_limit_scale=0.9 \
+      rewards.reward_initial_penalty_scale=0.1 \
+      rewards.reward_penalty_degree=0.0001
+(2) 看进度: tmux attach -t takst1 (脱离 Ctrl-b d) | 跟日志: tail -f logs/launch/takst1_*.log | 停: tmux kill-session -t takst1
+(3) 续训: 末尾加 +checkpoint=logs/Taks_T1_falcon/<run>/model_<iter>.pt
+(4) TensorBoard: tensorboard --logdir logs --host 0.0.0.0 --port 6006
+
+──── 步骤2  评估 (需显示器)
+    python humanoidverse/eval_agent.py +checkpoint=$(ls -t logs/Taks_T1_falcon/*/model_*.pt | head -1)
+──── 步骤2b  headless 录像 → mp4   # checkpoint 选 TensorBoard 里 ep_len 最高的
+    python humanoidverse/record_video.py \
+      +checkpoint=$(ls -t logs/Taks_T1_falcon/*/model_*.pt | head -1) \
+      +record_seconds=10
+──── 步骤2c  导出 onnx + pt (sim2sim/真机用; 不依赖 isaacgym)
+    python humanoidverse/export_policy.py \
+      +checkpoint=$(ls -t logs/Taks_T1_falcon/*/model_*.pt | head -1) \
+      +output=sim2real/models/falcon/Taks_T1.onnx
+──── 步骤3  Sim2Sim (MuJoCo 单文件, 导出 onnx 后即可跑; 不依赖 isaacgym; conda gmr)
+    python sim2sim/Taks_T1_sim2sim.py --model_path sim2real/models/falcon/Taks_T1.onnx
+    # 单文件自带键盘遥控(方向键/wasd 走、空格站↔走、z 停、,/. 转腰、-/= 升降高度、r 复位),
+    # 读训练配置(robot+obs)自动适配 32dof, 用关节名映射 MuJoCo 乱序执行器, 脖子跟踪零参考。
+    # 含 NaN/倾倒自动复位保护。场景 = data/robots/Taks_T1/scene_Taks_T1_freebase.xml。
+
+
+################################################################################
+#                  本体 4: Semi_Taks_T1 (20DoF 上半身, ★基座焊死/固定)
+#   ★与其它本体最大区别: 半身基座焊死在世界坐标 (fix_base_link: True, 无腿、无浮动基座)——
+#     这正是 Semi(半身)的定义: 上身固定在台座上做动作, 不走路。
+#   20DoF = 腰3 + 臂14 + 脖3; 走的是「上半身模仿 upper_body_imitation」流程, 不是解耦运动。
+#   所有配置已收进一个 exp: config/exp/upper_body_imitation_semi_taks_t1.yaml
+#     (内含 algo/env/robot/obs/rewards/terrain/domain_rand/simulator, 默认 num_envs=1024, headless=True)。
+################################################################################
+──── 步骤0  生成动作 .pkl (首次必跑; 见下方「数据转换」(1), conda gmr)
+    python humanoidverse/utils/retarget_g1_to_semi_taks_t1.py
+    # 产出 humanoidverse/data/motions/Semi_Taks_T1/v1/accad_all.pkl
+
+──── 步骤1  训练            # exp 已含全部配置组, 命令很短; 复制即跑
+    CUDA_VISIBLE_DEVICES=0 ./run_train.sh semit1 python humanoidverse/train_agent.py \
+      +exp=upper_body_imitation_semi_taks_t1 \
+      project_name=Semi_Taks_T1_falcon
+    # 想改环境数: 末尾加 num_envs=2048; 前台调试: 加 headless=False num_envs=4
+    # 看进度/停止 同上(把 takst1 换成 semit1)
+
+──── 步骤2  评估 (exp 的 eval_overrides 自动设 headless=False, num_envs=1)
+    python humanoidverse/eval_agent.py +checkpoint=$(ls -t logs/Semi_Taks_T1_falcon/*/model_*.pt | head -1)
+──── 步骤2c  导出 onnx + pt
+    python humanoidverse/export_policy.py \
+      +checkpoint=$(ls -t logs/Semi_Taks_T1_falcon/*/model_*.pt | head -1) \
+      +output=sim2real/models/falcon/Semi_Taks_T1.onnx
+──── 步骤3  Sim2Sim (MuJoCo 单文件, 固定基座上半身模仿; conda gmr)
+    python sim2sim/Semi_Taks_T1_sim2sim.py --model_path sim2real/models/falcon/Semi_Taks_T1.onnx
+    # 回放重定向动作库(data/motions/Semi_Taks_T1/v1/accad_all.pkl)做参考, 策略实时跟踪 ref_dof_pos。
+    # 基座焊死(scene_Semi_Taks_T1.xml, 无腿无浮动); 键盘: 空格暂停/播放, n/p 切动作, r 重播。
+    # 可选 --motion_idx N 指定起始动作。
+
+
+################################################################################
 #                  数据转换: 动作 .pkl 跨机器人重定向 (通用,conda fcgym)
 ################################################################################
 # 现成: G1 29DoF → Semi_Taks_T1 20DoF。按关节名对齐,缺的关节(脖子3个)零填充,按目标限位裁剪。
 (1) python humanoidverse/utils/retarget_g1_to_semi_taks_t1.py \
       --in_path  humanoidverse/data/motions/g1_29dof/v1/accad_all.pkl \
       --out_path humanoidverse/data/motions/Semi_Taks_T1/v1/accad_all.pkl
+
+# 现成: G1 29DoF → Taks_T1 32DoF (全身)。同样按关节名对齐, 脖子3个零填充, 按 Taks_T1 限位裁剪;浮动基座保留 G1 根轨迹。
+(2) python humanoidverse/utils/retarget_g1_to_taks_t1.py \
+      --in_path  humanoidverse/data/motions/g1_29dof/v1/accad_all.pkl \
+      --out_path humanoidverse/data/motions/Taks_T1/v1/accad_all.pkl
 
 
 ################################################################################
@@ -207,6 +312,12 @@
 
 ──── 本体 T1   (humanoidverse/data/motions/t1_29dof/v1/accad_all.pkl)
 (1) python humanoidverse/utils/vis_motion_mj.py +robot=t1/t1_29dof_waist_wrist
+
+──── 本体 Taks_T1   (humanoidverse/data/motions/Taks_T1/v1/accad_all.pkl; 自动匹配 scene_Taks_T1_freebase.xml)
+(1) python humanoidverse/utils/vis_motion_mj.py +robot=Taks_T1/Taks_T1_32dof
+
+──── 本体 Semi_Taks_T1   (humanoidverse/data/motions/Semi_Taks_T1/v1/accad_all.pkl; 固定基座,vis 用 freebase 场景浮起来回放)
+(1) python humanoidverse/utils/vis_motion_mj.py +robot=Semi_Taks_T1/Semi_Taks_T1_20dof
 
 ──── 可选参数 (追加在命令末尾, 务必带 +)
   +motion_idx=10     从第几个动作开始播放
