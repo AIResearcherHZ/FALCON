@@ -46,7 +46,11 @@ class IsaacGym(BaseSimulator):
             self.device = 'cpu'
 
         self.graphics_device_id = self.sim_device_id
-        if self.headless == True:
+        # Offscreen camera recording (record_video.py) needs the GPU graphics pipeline
+        # even with no viewer/display. Keep graphics enabled when headless_record is set;
+        # otherwise headless training/eval disables graphics as before (faster, no display).
+        self.headless_record = bool(self.config.get('headless_record', False))
+        if self.headless == True and not self.headless_record:
             self.graphics_device_id = -1
 
         sim = self.gym.create_sim(

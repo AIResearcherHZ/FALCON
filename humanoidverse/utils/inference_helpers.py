@@ -100,34 +100,58 @@ def export_decouple_policy_and_estimator_as_onnx(inference_model, path, exported
             opset_version=13           # Specify the opset version, if needed
         )
     
+class PPOMADecoupleWrapper(nn.Module):
+    """Concatenates the per-body-part actor means into a single action vector.
+
+    Input:  actor_obs  (B, actor_obs_dim * history_length)
+    Output: action     (B, sum(num_actions per body key))  -- lower_body first, then upper_body
+    This is the exact contract expected by sim2sim/g1_sim2sim.py and sim2real rl_policy.
+    """
+    def __init__(self, actors, body_keys):
+        super(PPOMADecoupleWrapper, self).__init__()
+        self.actors = nn.ModuleDict(actors)
+        self.body_keys = list(body_keys)
+
+    def forward(self, actor_obs):
+        actions = [self.actors[k].act_inference(actor_obs) for k in self.body_keys]
+        return torch.cat(actions, dim=-1)
+
+
 def export_multi_agent_decouple_policy_as_onnx(inference_model, path, exported_policy_name, example_obs_dict, body_keys=["lower_body", "upper_body"]):
         os.makedirs(path, exist_ok=True)
         path = os.path.join(path, exported_policy_name)
 
         actors = {
-            k: copy.deepcopy(inference_model['actors'][k]).to('cpu')
+            k: copy.deepcopy(inference_model['actors'][k]).to('cpu').eval()
             for k in body_keys
         }
 
-        class PPOMADecoupleWrapper(nn.Module):
-            def __init__(self, actors, body_keys):
-                super(PPOMADecoupleWrapper, self).__init__()
-                self.actors = nn.ModuleDict(actors)
-                self.body_keys = body_keys
-
-            def forward(self, actor_obs):
-                actions = [self.actors[k].act_inference(actor_obs) for k in self.body_keys]
-                return torch.cat(actions, dim=-1)
-
         wrapper = PPOMADecoupleWrapper(actors, body_keys)
-        example_input_list = example_obs_dict["actor_obs"]
+        example_input_list = example_obs_dict["actor_obs"].to('cpu')
 
         torch.onnx.export(
             wrapper,
             example_input_list,
             path,
-            verbose=True,
+            verbose=False,
             input_names=["actor_obs"],
             output_names=["action"],
             opset_version=13
         )
+
+
+def export_multi_agent_decouple_policy_as_jit(inference_model, path, exported_policy_name, example_obs_dict, body_keys=["lower_body", "upper_body"]):
+        """TorchScript counterpart of export_multi_agent_decouple_policy_as_onnx (same I/O contract)."""
+        os.makedirs(path, exist_ok=True)
+        path = os.path.join(path, exported_policy_name)
+
+        actors = {
+            k: copy.deepcopy(inference_model['actors'][k]).to('cpu').eval()
+            for k in body_keys
+        }
+
+        wrapper = PPOMADecoupleWrapper(actors, body_keys)
+        example_input_list = example_obs_dict["actor_obs"].to('cpu')
+
+        traced = torch.jit.trace(wrapper, example_input_list)
+        traced.save(path)

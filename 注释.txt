@@ -120,9 +120,21 @@
 (3) 续训: 末尾加 +checkpoint=logs/g1_29dof_falcon/<run>/model_<iter>.pt
 (4) TensorBoard: tensorboard --logdir logs --host 0.0.0.0 --port 6006
 
-──── 步骤2  评估
+──── 步骤2  评估 (需显示器)
     python humanoidverse/eval_agent.py \
-      +checkpoint=logs/g1_29dof_falcon/20260608_221455-g1_29dof_falcon-decoupled_locomotion-g1_29dof_fakehand/model_10000.pt
+      +checkpoint=logs/g1_29dof_falcon/20260608_221455-g1_29dof_falcon-decoupled_locomotion-g1_29dof_fakehand/model_4800.pt
+
+──── 步骤2b  headless 录像 → mp4   # checkpoint 选 TensorBoard 里 ep_len 最高的(不一定是最后的; 训练若崩溃, 最后的会站不稳)
+    python humanoidverse/record_video.py \
+      +checkpoint=logs/g1_29dof_falcon/20260608_221455-g1_29dof_falcon-decoupled_locomotion-g1_29dof_fakehand/model_4000.pt \
+      +record_seconds=10
+    # 输出 <run>/renderings/model_*.mp4 ; 可选 +vx +vy +yaw +stand_seconds +width +height +output
+
+──── 步骤2c  导出 onnx + pt (sim2sim/真机用; 不依赖 isaacgym)
+    python humanoidverse/export_policy.py \
+      +checkpoint=logs/g1_29dof_falcon/20260608_221455-g1_29dof_falcon-decoupled_locomotion-g1_29dof_fakehand/model_4800.pt \
+      +output=sim2real/models/falcon/g1.onnx
+    # 默认也写 <run>/exported/ ; +output 会覆盖自带 onnx, 想保留就换名 + sim2sim --model_path 指定
 
 ──── 步骤3  Sim2Sim (MuJoCo,conda gmr,开两个终端;脚本已自定位,在 FALCON/ 根目录直接跑)
 (1) 终端1(先开仿真,弹出 MuJoCo 窗口,机器人被吊带吊着):
@@ -131,7 +143,7 @@
 (2) 终端2(再开策略):
     python sim2real/rl_policy/loco_manip/loco_manip.py \
       --config=config/g1/g1_29dof_falcon.yaml \
-      --model_path=models/falcon/g1_29dof.onnx
+      --model_path=models/falcon/g1.onnx
 
     # ── 键盘控制速查 (loco_manip;两套键盘,别按错窗口!) ──
     # ★顺序: 终端2按 i 归位 → MuJoCo窗按 8 落地、9 松吊带 → 终端2按 ] 启动 → = 进行走 → wasd走/qe转
@@ -186,9 +198,17 @@
     #  env.config.apply_force_pos_ratio_range=[0.5,2.0]    末端施力点位置的随机范围
     #  想用 wandb: 末尾追加  +opt=wandb wandb.wandb_entity=<你的wandb账号>
     # 看进度/停止 同 G1: tmux attach -t t1 (脱离 Ctrl-b d) | tail -f logs/launch/t1_*.log | tmux kill-session -t t1
-(2) 评估(复制即跑,自动选最新 checkpoint):
+(2) 评估 (需显示器):
     python humanoidverse/eval_agent.py \
       +checkpoint=$(ls -t logs/t1_29dof_falcon/*/model_*.pt | head -1)
+(2b) headless 录像 → mp4 (T1 较矮可加 +cam_dist=2.4):
+    python humanoidverse/record_video.py \
+      +checkpoint=$(ls -t logs/t1_29dof_falcon/*/model_*.pt | head -1) \
+      +record_seconds=10 +vx=0.4
+(2c) 导出 onnx + pt:
+    python humanoidverse/export_policy.py \
+      +checkpoint=$(ls -t logs/t1_29dof_falcon/*/model_*.pt | head -1) \
+      +output=sim2real/models/falcon/t1_29dof.onnx
 (3) Sim2Sim (sim2real/,fcreal,两终端):
     终端1: cd sim2real && python sim_env/loco_manip.py --config=config/t1/t1_29dof_falcon.yaml
     终端2: cd sim2real && python rl_policy/loco_manip/loco_manip.py \
