@@ -18,7 +18,7 @@
       +terrain=terrain_locomotion_plane \
       +obs=dec_loco/g1_29dof_obs_diff_force_history_wolinvel_ma \
       headless=True \
-      num_envs=8192 \
+      num_envs=10000 \
       project_name=g1_29dof_falcon \
       experiment_name=g1_29dof_falcon \
       obs.add_noise=True \
@@ -57,7 +57,7 @@
       +robot=g1/g1_29dof_waist_fakehand \
       +terrain=terrain_locomotion_plane \
       +obs=dec_loco/g1_29dof_obs_diff_force_history_wolinvel_ma \
-      num_envs=8192 \
+      num_envs=10000 \
       project_name=g1_29dof_falcon \
       experiment_name=g1_29dof_falcon \
       obs.add_noise=True \
@@ -85,7 +85,7 @@
 
 ──── 步骤2c  导出 onnx + pt (sim2sim/真机用; 不依赖 isaacgym)
     python humanoidverse/export_policy.py \
-      +checkpoint=logs/g1_29dof_falcon/20260608_221455-g1_29dof_falcon-decoupled_locomotion-g1_29dof_fakehand/model_4800.pt \
+      +checkpoint=logs/g1_29dof_falcon/20260610_192706-g1_29dof_falcon-decoupled_locomotion-g1_29dof_fakehand/model_8000.pt \
       +output=sim2real/models/falcon/g1.onnx
     # 默认也写 <run>/exported/ ; +output 会覆盖自带 onnx, 想保留就换名 + sim2sim --model_path 指定
 
@@ -131,7 +131,7 @@
       +robot=t1/t1_29dof_waist_wrist \
       +terrain=terrain_locomotion_plane \
       +obs=dec_loco/t1_29dof_obs_diff_force_history_wolinvel_ma \
-      num_envs=8192 \
+      num_envs=10000 \
       project_name=t1_29dof_falcon \
       experiment_name=t1_29dof_falcon \
       obs.add_noise=True \
@@ -158,7 +158,7 @@
       +robot=t1/t1_29dof_waist_wrist \
       +terrain=terrain_locomotion_plane \
       +obs=dec_loco/t1_29dof_obs_diff_force_history_wolinvel_ma \
-      num_envs=8192 \
+      num_envs=10000 \
       project_name=t1_29dof_falcon \
       experiment_name=t1_29dof_falcon \
       obs.add_noise=True \
@@ -204,7 +204,7 @@
 
 ──── 步骤1  训练            # 同 G1, 仅换 robot/obs; 复制即跑
 (1) 单卡训练:
-    CUDA_VISIBLE_DEVICES=0 ./run_train.sh takst1 python humanoidverse/train_agent.py \
+    CUDA_VISIBLE_DEVICES=1 ./run_train.sh takst1 python humanoidverse/train_agent.py \
       +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \
       +simulator=isaacgym \
       +domain_rand=domain_rand_rl_gym \
@@ -212,7 +212,7 @@
       +robot=Taks_T1/Taks_T1_32dof \
       +terrain=terrain_locomotion_plane \
       +obs=dec_loco/Taks_T1_32dof_obs_diff_force_history_wolinvel_ma \
-      num_envs=8192 \
+      num_envs=10000 \
       project_name=Taks_T1_falcon \
       experiment_name=Taks_T1_falcon \
       obs.add_noise=True \
@@ -231,7 +231,7 @@
       +robot=Taks_T1/Taks_T1_32dof \
       +terrain=terrain_locomotion_plane \
       +obs=dec_loco/Taks_T1_32dof_obs_diff_force_history_wolinvel_ma \
-      num_envs=8192 \
+      num_envs=10000 \
       project_name=Taks_T1_falcon \
       experiment_name=Taks_T1_falcon \
       obs.add_noise=True \

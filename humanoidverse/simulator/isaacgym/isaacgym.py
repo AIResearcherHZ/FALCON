@@ -160,8 +160,14 @@ class IsaacGym(BaseSimulator):
         # assert if  aligns with config
         assert self.num_dof == len(self.robot_config.dof_names), "Number of DOFs must be equal to number of actions"
         assert self.num_bodies == len(self.robot_config.body_names), "Number of bodies must be equal to number of body names"
-        assert self.dof_names == self.robot_config.dof_names, "DOF names must match the config"
-        assert self.body_names == self.robot_config.body_names, "Body names must match the config"
+        if self.dof_names != list(self.robot_config.dof_names):
+            logger.error(f"Asset DOF names ({len(self.dof_names)}): {self.dof_names}")
+            logger.error(f"Config DOF names ({len(self.robot_config.dof_names)}): {list(self.robot_config.dof_names)}")
+        assert self.dof_names == list(self.robot_config.dof_names), "DOF names must match the config"
+        if self.body_names != list(self.robot_config.body_names):
+            logger.error(f"Asset body names ({len(self.body_names)}): {self.body_names}")
+            logger.error(f"Config body names ({len(self.robot_config.body_names)}): {list(self.robot_config.body_names)}")
+        assert self.body_names == list(self.robot_config.body_names), "Body names must match the config"
 
     def _setup_robot_asset_when_env_created(self, asset_root, asset_file, asset_cfg):
         asset_path = os.path.join(asset_root, asset_file)
