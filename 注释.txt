@@ -147,6 +147,25 @@
       rewards.reward_scales.penalty_upper_body_action_rate=-0.5 \
       env.config.apply_force_pos_ratio_range=[0.5,2.0]
 
+    小Demo测试：
+    CUDA_VISIBLE_DEVICES=0 python humanoidverse/train_agent.py \
+      +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \
+      +simulator=isaacgym \
+      +domain_rand=domain_rand_rl_gym \
+      +rewards=dec_loco/reward_dec_loco_stand_height_ma_diff_force \
+      +robot=t1/t1_29dof_waist_wrist \
+      +terrain=terrain_locomotion_plane \
+      +obs=dec_loco/t1_29dof_obs_diff_force_history_wolinvel_ma \
+      headless=False \
+      num_envs=8 \
+      project_name=t1_29dof_falcon \
+      experiment_name=t1_29dof_falcon \
+      obs.add_noise=True \
+      env.config.fix_upper_body_prob=0.3 \
+      robot.dof_effort_limit_scale=0.9 \
+      rewards.reward_initial_penalty_scale=0.1 \
+      rewards.reward_penalty_degree=0.0001
+
 (1b) 多卡训练(复制即跑;4 卡。改张数就改 NPROC=,会话名 t1m 可自取。首次上服务器先按上方「训练加速」节 A 验证两步)
     # 指定卡: 最前面加 CUDA_VISIBLE_DEVICES=0,1,2,3 (卡数须≥NPROC);不加默认用全部卡
     # ★strong 扩展(默认): 下面 num_envs 是「总环境数」,各卡自动均分(如4卡→各2048),优化等价单卡;num_envs 须能被卡数整除
@@ -194,7 +213,7 @@
 
 ################################################################################
 #                  本体 3: Taks_T1 (32DoF 全身, 浮动基座)
-#   = g1 的 29DoF + 3DoF 脖子; 关节顺序 腿12→腰3→臂14→脖3; 与 g1 同走解耦运动(decoupled locomotion)流程。
+#   = g1 的 29DoF + 3DoF 脖子; 关节顺序 腿12→腰3→左臂7→脖3→右臂7 (IsaacGym 按字母序 DFS, 脖子在两臂之间); 与 g1 同走解耦运动(decoupled locomotion)流程。
 #   下半身 lower=15(腿12+腰3), 上半身 upper=17(臂14+脖3); g1 动作里没有脖子, 脖子3关节跟踪零参考(保持平视)。
 #   robot 配置 config/robot/Taks_T1/Taks_T1_32dof.yaml ; obs 配置 config/obs/dec_loco/Taks_T1_32dof_obs_diff_force_history_wolinvel_ma.yaml
 ################################################################################
@@ -222,6 +241,25 @@
       rewards.reward_penalty_degree=0.0001
     # 站立高度 desired_base_height 奖励默认 0.75, 正好是 Taks_T1 站姿高度, 无需覆盖(这点和 t1 不同, t1 要降到 0.62)。
 
+  小Demo测试：
+    CUDA_VISIBLE_DEVICES=0 python humanoidverse/train_agent.py \
+      +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \
+      +simulator=isaacgym \
+      +domain_rand=domain_rand_rl_gym \
+      +rewards=dec_loco/reward_dec_loco_stand_height_ma_diff_force \
+      +robot=Taks_T1/Taks_T1_32dof \
+      +terrain=terrain_locomotion_plane \
+      +obs=dec_loco/Taks_T1_32dof_obs_diff_force_history_wolinvel_ma \
+      headless=False \
+      num_envs=8 \
+      project_name=Taks_T1_falcon \
+      experiment_name=Taks_T1_falcon \
+      obs.add_noise=True \
+      env.config.fix_upper_body_prob=0.3 \
+      robot.dof_effort_limit_scale=0.9 \
+      rewards.reward_initial_penalty_scale=0.1 \
+      rewards.reward_penalty_degree=0.0001
+      
 (1b) 多卡训练(复制即跑;4 卡。改张数改 NPROC=,会话名 takst1m 可自取):
     CUDA_VISIBLE_DEVICES=0,1,2,3 NPROC=4 ./run_train.sh takst1m python humanoidverse/train_agent.py \
       +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env \

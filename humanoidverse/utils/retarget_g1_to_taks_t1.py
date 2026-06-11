@@ -37,10 +37,10 @@ TAKS_DOF_NAMES = [
     "left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_shoulder_yaw_joint",
     "left_elbow_joint",
     "left_wrist_roll_joint", "left_wrist_yaw_joint", "left_wrist_pitch_joint",
+    "neck_yaw_joint", "neck_roll_joint", "neck_pitch_joint",
     "right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_shoulder_yaw_joint",
     "right_elbow_joint",
     "right_wrist_roll_joint", "right_wrist_yaw_joint", "right_wrist_pitch_joint",
-    "neck_yaw_joint", "neck_roll_joint", "neck_pitch_joint",
 ]
 
 TAKS_JOINT_AXES = np.array([
@@ -48,8 +48,8 @@ TAKS_JOINT_AXES = np.array([
     [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 0], [1, 0, 0],
     [0, 0, 1], [1, 0, 0], [0, 1, 0],
     [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0],
-    [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0],
     [0, 0, 1], [1, 0, 0], [0, 1, 0],
+    [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0],
 ], dtype=np.float32)
 
 TAKS_DOF_LIMITS = np.array([
@@ -57,9 +57,11 @@ TAKS_DOF_LIMITS = np.array([
     [-2.5307, 2.8798], [-2.9671, 0.5236], [-2.7576, 2.7576], [-0.087267, 2.8798], [-0.87267, 0.5236], [-0.2618, 0.2618],
     [-2.618, 2.618], [-0.52, 0.52], [-0.52, 0.52],
     [-3.0892, 2.6704], [-1.5882, 2.2515], [-2.618, 2.618], [-0.7, 1.57], [-2.67, 2.67], [-0.9, 0.9], [-0.9, 0.9],
-    [-3.0892, 2.6704], [-2.2515, 1.5882], [-2.618, 2.618], [-0.7, 1.57], [-2.67, 2.67], [-0.9, 0.9], [-0.9, 0.9],
     [-1.57, 1.57], [-0.873, 0.873], [-0.873, 0.873],
+    [-3.0892, 2.6704], [-2.2515, 1.5882], [-2.618, 2.618], [-0.7, 1.57], [-2.67, 2.67], [-0.9, 0.9], [-0.9, 0.9],
 ], dtype=np.float32)
+
+NUM_EXTEND_BODIES = 3
 
 
 def build_dof_index_map() -> np.ndarray:
@@ -82,8 +84,8 @@ def retarget_one(g1_motion: dict, dof_map: np.ndarray) -> dict:
 
     np.clip(taks_dof, TAKS_DOF_LIMITS[:, 0], TAKS_DOF_LIMITS[:, 1], out=taks_dof)
 
-    pose_aa = np.zeros((T, 1 + len(TAKS_DOF_NAMES), 3), dtype=np.float32)
-    pose_aa[:, 1:, :] = taks_dof[:, :, None] * TAKS_JOINT_AXES[None, :, :]
+    pose_aa = np.zeros((T, 1 + len(TAKS_DOF_NAMES) + NUM_EXTEND_BODIES, 3), dtype=np.float32)
+    pose_aa[:, 1:1 + len(TAKS_DOF_NAMES), :] = taks_dof[:, :, None] * TAKS_JOINT_AXES[None, :, :]
 
     root_trans = np.asarray(g1_motion["root_trans_offset"], dtype=np.float32) \
         if "root_trans_offset" in g1_motion else np.zeros((T, 3), dtype=np.float32)
